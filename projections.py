@@ -22,7 +22,7 @@ tesla_rev_2024    = 75_147_492_000  # deliveries × ASP
 scenarios = {
     'Bear': {
         'market_growth' : 0.15,   # IEA STEPS
-        'share_change'  : -0.02,  # BYD pressure
+        'share_change'  : -0.05,  # BYD pressure
         'price_change'  : -0.02,  # price war
     },
     'Base': {

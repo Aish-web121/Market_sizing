@@ -104,7 +104,7 @@ bull_growth = st.sidebar.slider("Bull Market Growth %", 15,  40, 28) / 100
 
 st.sidebar.divider()
 
-bear_share = st.sidebar.slider("Bear Tesla Share Change %", -5,  0, -2) / 100
+bear_share = st.sidebar.slider("Bear Tesla Share Change %", -5,  0, -5) / 100
 base_share = st.sidebar.slider("Base Tesla Share Change %", -2,  2,  0) / 100
 bull_share = st.sidebar.slider("Bull Tesla Share Change %",  0,  5,  2) / 100
 
@@ -454,3 +454,9 @@ st.markdown(f"""
 
 st.divider()
 st.caption("Built with IEA Global EV Outlook 2025 · Tesla 10-K · Prophet ML · Monte Carlo Simulation · Streamlit")
+st.subheader("⚠️ Model Limitations")
+st.markdown("""
+- **Prophet has no policy awareness** — it is trained purely on historical IEA data and assumes deceleration continues. It cannot account for new government EV mandates or subsidy changes.
+- **ASP assumptions are held constant per scenario** — real-world price changes are non-linear. A sudden price war acceleration (as seen 2022–2024) could compress Bear case revenue faster than modelled.
+- **Limited ML training data** — Tesla delivery history only goes back to 2016, giving Prophet very few data points. Confidence intervals should be treated as directional, not precise.
+""")
