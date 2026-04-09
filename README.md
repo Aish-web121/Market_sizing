@@ -72,8 +72,8 @@ SAM (Serviceable Available Market)
 Regions where Tesla currently sells vehicles (North America, Europe, China, selected APAC).
 SOM (Serviceable Obtainable Market)
 Tesla’s achievable penetration within SAM based on scenario-driven market share projections.
-5. Key Outputs
 
+5. Key Outputs
 The Excel model automatically generates:
 
 Global BEV market projections (2024–2030)
