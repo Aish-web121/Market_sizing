@@ -460,3 +460,124 @@ st.markdown("""
 - **ASP assumptions are held constant per scenario** — real-world price changes are non-linear. A sudden price war acceleration (as seen 2022–2024) could compress Bear case revenue faster than modelled.
 - **Limited ML training data** — Tesla delivery history only goes back to 2016, giving Prophet very few data points. Confidence intervals should be treated as directional, not precise.
 """)
+# ============================================
+# SECTION 3 — TAM / SAM / SOM CHARTS
+# ============================================
+
+st.divider()
+st.subheader("🌍 Section 3 — TAM / SAM / SOM Analysis")
+
+# ==========================
+# TAM — Total Addressable Market
+# ==========================
+st.markdown("### 🚘 TAM — Global Total Car Market (2024–2030)")
+
+tam_values = [73.5, 74.2, 75.0, 75.8, 76.5, 77.3, 78.0]  # in million units (OICA baseline)
+tam_df = pd.DataFrame({"Year": years, "TAM": tam_values})
+
+fig_tam = go.Figure()
+fig_tam.add_trace(go.Bar(
+    x=tam_df["Year"],
+    y=tam_df["TAM"],
+    marker_color="steelblue",
+    hovertemplate="TAM: %{y}M units<extra></extra>"
+))
+
+fig_tam.update_layout(
+    xaxis_title="Year",
+    yaxis_title="Total Car Market (Million Units)",
+    height=420,
+    title="Global Total Car Market — TAM"
+)
+
+st.plotly_chart(fig_tam, use_container_width=True)
+
+# ==========================
+# SAM — Global BEV Market (ML Forecast vs Historical)
+# ==========================
+st.markdown("### 🔋 SAM — Global BEV Market (Historical + ML Forecast)")
+
+fig_sam = go.Figure()
+fig_sam.add_trace(go.Scatter(
+    x=comparison["Year"], y=comparison["ML_Forecast"]/1e6,
+    name="ML Forecast", mode="lines+markers",
+    line=dict(color="orange", width=3)
+))
+fig_sam.add_trace(go.Scatter(
+    x=[2024], y=[9.9],  # 2024 IEA starting point
+    name="Historical (IEA 2024)", mode="markers",
+    marker=dict(size=12, color="blue")
+))
+
+fig_sam.update_layout(
+    xaxis_title="Year",
+    yaxis_title="BEV Sales (Million Units)",
+    height=420,
+)
+
+st.plotly_chart(fig_sam, use_container_width=True)
+
+# ==========================
+# SOM — Tesla Share Trend (Bear / Base / Bull)
+# ==========================
+st.markdown("### 🚀 SOM — Tesla Share of BEV Market (2024–2030)")
+
+tesla_start_share = 0.181  # 18.1% in 2024
+
+def project_share(change):
+    shares = [tesla_start_share]
+    for _ in range(6):
+        shares.append(shares[-1] * (1 + change))
+    return [s * 100 for s in shares]  # convert to %
+
+bear_som = project_share(bear_share)
+base_som = project_share(base_share)
+bull_som = project_share(bull_share)
+
+fig_som = go.Figure()
+
+fig_som.add_trace(go.Scatter(
+    x=years, y=bear_som,
+    name="Bear Case", mode="lines+markers",
+    line=dict(color="red", dash="dash"), marker=dict(size=7)
+))
+fig_som.add_trace(go.Scatter(
+    x=years, y=base_som,
+    name="Base Case", mode="lines+markers",
+    line=dict(color="royalblue"), marker=dict(size=7)
+))
+fig_som.add_trace(go.Scatter(
+    x=years, y=bull_som,
+    name="Bull Case", mode="lines+markers",
+    line=dict(color="green", dash="dash"), marker=dict(size=7)
+))
+
+fig_som.update_layout(
+    xaxis_title="Year",
+    yaxis_title="Tesla Market Share (%)",
+    height=420,
+)
+
+st.plotly_chart(fig_som, use_container_width=True)
+
+# ==========================
+# Competitor Pie Chart
+# ==========================
+st.markdown("### 🥧 Competitor Market Share — 2024 Snapshot")
+
+competitors = ["Tesla", "BYD", "Rest of World"]
+shares = [18.1, 17.0, 64.9]
+
+fig_pie = go.Figure(data=[go.Pie(
+    labels=competitors,
+    values=shares,
+    hole=0.45,
+    textinfo="label+percent",
+)])
+
+fig_pie.update_layout(
+    height=420,
+    showlegend=True,
+)
+
+st.plotly_chart(fig_pie, use_container_width=True)
