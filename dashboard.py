@@ -111,7 +111,7 @@ bull_growth = st.sidebar.slider("Bull Market Growth %", 15,  40, 28) / 100
 
 st.sidebar.divider()
 
-bear_share = st.sidebar.slider("Bear Tesla Share Change %", -5,  0, -2) / 100
+bear_share = st.sidebar.slider("Bear Tesla Share Change %", -5,  0, -5) / 100
 base_share = st.sidebar.slider("Base Tesla Share Change %", -2,  2,  0) / 100
 bull_share = st.sidebar.slider("Bull Tesla Share Change %",  0,  5,  2) / 100
 
@@ -205,6 +205,27 @@ with col_s:
     )])
     fig_pie.update_layout(height=350, margin=dict(t=20), showlegend=True)
     st.plotly_chart(fig_pie, use_container_width=True)
+
+st.markdown("##### 🔋 SAM — Global BEV Market (Historical + ML Forecast)")
+
+fig_sam = go.Figure()
+fig_sam.add_trace(go.Scatter(
+    x=comparison["Year"], y=comparison["ML_Forecast"]/1e6,
+    name="ML Forecast (Prophet)", mode="lines+markers",
+    line=dict(color="orange", width=3), marker=dict(size=8),
+    hovertemplate="ML Forecast: %{y:.2f}M<extra></extra>"
+))
+fig_sam.add_trace(go.Scatter(
+    x=comparison["Year"], y=comparison["Base_Units"]/1e6,
+    name="Base Case", mode="lines+markers",
+    line=dict(color="royalblue", width=2), marker=dict(size=7),
+    hovertemplate="Base: %{y:.2f}M<extra></extra>"
+))
+fig_sam.update_layout(
+    xaxis_title="Year", yaxis_title="BEV Sales (Million Units)",
+    hovermode="x unified", height=380, legend=dict(orientation="h", y=1.1)
+)
+st.plotly_chart(fig_sam, use_container_width=True)
 
 st.markdown("##### 🚀 SOM — Tesla Share of BEV Market (2024–2030)")
 
@@ -491,7 +512,7 @@ st.markdown(f"""
     <h4>📉 Finding 5 — BEV market share battle is the biggest risk</h4>
     <p>In 2024, Tesla held <b>18.1%</b> of the global BEV car market while BYD held <b>17.0%</b> —
     a gap of just 1.1 percentage points. The Bear case assumes Tesla loses share every year.
-    Even a 2% annual share decline compounds to a dramatically smaller revenue outcome by 2030,
+    Even a 5% annual share decline compounds to a dramatically smaller revenue outcome by 2030,
     independent of overall market growth.</p>
 </div>
 """, unsafe_allow_html=True)
