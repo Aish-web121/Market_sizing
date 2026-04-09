@@ -100,4 +100,16 @@ Revenue models
 Scenario summaries
 TAM–SAM–SOM breakdown
 
-The file is fully automated and designed for clarity and transparency.
+Live Interactive Model (Streamlit App)
+Experience the full Tesla Market Sizing model here:
+➡️ https://marketsizing-9feu2z8zzeyxkhopfemqzq.streamlit.app/
+
+This app includes:
+
+Scenario selection (Bear / Base / Bull)
+Interactive BEV market projections
+Tesla deliveries forecast
+Revenue forecast
+TAM–SAM–SOM visualizations
+
+
