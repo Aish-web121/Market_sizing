@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from prophet import Prophet
 
 st.set_page_config(page_title="Tesla EV Market Sizing", page_icon="🚗", layout="wide")
 
@@ -53,51 +52,9 @@ st.markdown("""
 # HEADER
 # ============================================
 st.markdown('<p class="big-title">🚗 Tesla EV Market Sizing — 2024 to 2030</p>', unsafe_allow_html=True)
-st.markdown("**ML Forecast · Bear / Base / Bull Scenarios · Monte Carlo Simulation · TAM / SAM / SOM**")
+st.markdown("**Bear / Base / Bull Scenarios · Monte Carlo Simulation · TAM / SAM / SOM**")
 st.caption("Sources: IEA Global EV Outlook 2025 · Tesla 10-K · OICA 2024")
 st.divider()
-
-# ============================================
-# LOAD & TRAIN PROPHET
-# ============================================
-@st.cache_data
-def load_and_forecast():
-    df = pd.read_excel("EV Data Explorer 2025.xlsx", engine="openpyxl")
-
-    df_clean = df[
-        (df["region_country"] == "World") &
-        (df["powertrain"] == "BEV") &
-        (df["parameter"] == "EV sales") &
-        (df["category"] == "Historical") &
-        (df["mode"] == "Cars")
-    ][["year", "value"]].copy()
-
-    df_clean = df_clean.sort_values("year")
-    df_clean = df_clean[df_clean["year"] >= 2018]
-    df_clean = df_clean.rename(columns={"year": "ds", "value": "y"})
-    df_clean["ds"] = pd.to_datetime(df_clean["ds"], format="%Y")
-
-    model = Prophet(
-        yearly_seasonality=False,
-        weekly_seasonality=False,
-        daily_seasonality=False,
-        changepoint_prior_scale=0.3,
-        interval_width=0.80,
-    )
-    model.fit(df_clean)
-
-    future = model.make_future_dataframe(periods=7, freq='YE')
-    forecast = model.predict(future)
-
-    forecast_df = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
-    forecast_df["Year"] = forecast_df["ds"].dt.year
-    forecast_df = forecast_df[forecast_df["Year"] >= 2024]
-    forecast_df = forecast_df.drop_duplicates(subset="Year")
-    forecast_df.columns = ["ds", "ML_Forecast", "ML_Lower", "ML_Upper", "Year"]
-
-    return forecast_df[["Year", "ML_Forecast", "ML_Lower", "ML_Upper"]]
-
-ml_df = load_and_forecast()
 
 # ============================================
 # SIDEBAR
@@ -156,7 +113,7 @@ manual_df = pd.DataFrame({
     "Bull_Rev":   [r/1e9 for r in bull_rev],
 })
 
-comparison = pd.merge(manual_df, ml_df, on="Year")
+comparison = manual_df
 
 # ============================================
 # KPI STRIP
@@ -168,7 +125,7 @@ k1.metric("TAM (Total Cars)",      "$2.65T",  "73.5M units")
 k2.metric("SAM (Global BEV 2024)", "9.9M",    "units sold")
 k3.metric("Tesla Deliveries 2024", "1.79M",   "18.1% share")
 k4.metric("Tesla Revenue 2024",    "$75.1B",  "base year")
-k5.metric("ML Forecast 2030",      f"{int(comparison['ML_Forecast'].iloc[-1]/1e6):.0f}M", "units (Prophet)")
+k5.metric("Base Case 2030",        f"{int(comparison['Base_Units'].iloc[-1]/1e6):.0f}M", "units (projected)")
 
 st.divider()
 
@@ -206,20 +163,26 @@ with col_s:
     fig_pie.update_layout(height=350, margin=dict(t=20), showlegend=True)
     st.plotly_chart(fig_pie, use_container_width=True)
 
-st.markdown("##### 🔋 SAM — Global BEV Market (Historical + ML Forecast)")
+st.markdown("##### 🔋 SAM — Global BEV Market (Bear / Base / Bull)")
 
 fig_sam = go.Figure()
 fig_sam.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["ML_Forecast"]/1e6,
-    name="ML Forecast (Prophet)", mode="lines+markers",
-    line=dict(color="orange", width=3), marker=dict(size=8),
-    hovertemplate="ML Forecast: %{y:.2f}M<extra></extra>"
-))
-fig_sam.add_trace(go.Scatter(
     x=comparison["Year"], y=comparison["Base_Units"]/1e6,
     name="Base Case", mode="lines+markers",
-    line=dict(color="royalblue", width=2), marker=dict(size=7),
+    line=dict(color="royalblue", width=3), marker=dict(size=8),
     hovertemplate="Base: %{y:.2f}M<extra></extra>"
+))
+fig_sam.add_trace(go.Scatter(
+    x=comparison["Year"], y=comparison["Bear_Units"]/1e6,
+    name="Bear Case", mode="lines+markers",
+    line=dict(color="red", width=2, dash="dash"), marker=dict(size=7),
+    hovertemplate="Bear: %{y:.2f}M<extra></extra>"
+))
+fig_sam.add_trace(go.Scatter(
+    x=comparison["Year"], y=comparison["Bull_Units"]/1e6,
+    name="Bull Case", mode="lines+markers",
+    line=dict(color="green", width=2, dash="dash"), marker=dict(size=7),
+    hovertemplate="Bull: %{y:.2f}M<extra></extra>"
 ))
 fig_sam.update_layout(
     xaxis_title="Year", yaxis_title="BEV Sales (Million Units)",
@@ -260,26 +223,13 @@ st.plotly_chart(fig_som, use_container_width=True)
 st.divider()
 
 # ============================================
-# SECTION 2 — SCENARIO vs ML COMPARISON
+# SECTION 2 — SCENARIO COMPARISON
 # ============================================
-st.subheader("📈 Section 2 — Bear / Base / Bull vs ML Forecast (Units)")
-st.caption("How do policy-driven scenarios compare to what pure historical data predicts?")
+st.subheader("📈 Section 2 — Bear / Base / Bull Scenario Comparison (Units)")
+st.caption("How do the three policy-driven scenarios compare to one another?")
 
 fig1 = go.Figure()
 
-fig1.add_trace(go.Scatter(
-    x=list(comparison["Year"]) + list(comparison["Year"])[::-1],
-    y=list(comparison["ML_Upper"]/1e6) + list(comparison["ML_Lower"]/1e6)[::-1],
-    fill='toself', fillcolor='rgba(255,165,0,0.12)',
-    line=dict(color='rgba(255,255,255,0)'),
-    name="ML 80% Confidence Band", hoverinfo="skip"
-))
-fig1.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["ML_Forecast"]/1e6,
-    name="ML Forecast (Prophet)", mode="lines+markers",
-    line=dict(color="orange", width=3), marker=dict(size=9),
-    hovertemplate="ML: %{y:.2f}M units<extra></extra>"
-))
 fig1.add_trace(go.Scatter(
     x=comparison["Year"], y=comparison["Base_Units"]/1e6,
     name="Base Case", mode="lines+markers",
@@ -306,14 +256,14 @@ fig1.update_layout(
 )
 st.plotly_chart(fig1, use_container_width=True)
 
-st.markdown("##### 📋 Gap Table — How far ahead/behind are scenarios vs ML each year?")
+st.markdown("##### 📋 Spread Table — How far apart are the scenarios each year?")
 gap_df = pd.DataFrame({"Year": comparison["Year"]})
-gap_df["ML Forecast"] = (comparison["ML_Forecast"]/1e6).round(2).astype(str) + "M"
-gap_df["Bear vs ML"]  = ((comparison["Bear_Units"] - comparison["ML_Forecast"])/1e6).round(2).astype(str) + "M"
-gap_df["Base vs ML"]  = ((comparison["Base_Units"] - comparison["ML_Forecast"])/1e6).round(2).astype(str) + "M"
-gap_df["Bull vs ML"]  = ((comparison["Bull_Units"] - comparison["ML_Forecast"])/1e6).round(2).astype(str) + "M"
+gap_df["Bear"] = (comparison["Bear_Units"]/1e6).round(2).astype(str) + "M"
+gap_df["Base"] = (comparison["Base_Units"]/1e6).round(2).astype(str) + "M"
+gap_df["Bull"] = (comparison["Bull_Units"]/1e6).round(2).astype(str) + "M"
+gap_df["Bull vs Bear"] = ((comparison["Bull_Units"] - comparison["Bear_Units"])/1e6).round(2).astype(str) + "M"
 st.dataframe(gap_df, use_container_width=True, hide_index=True)
-st.caption("Positive = scenario more optimistic than ML. Negative = ML more optimistic than scenario.")
+st.caption("Bull vs Bear shows how wide the range of outcomes becomes by each year.")
 
 st.divider()
 
@@ -470,29 +420,9 @@ st.divider()
 # ============================================
 st.subheader("💡 Section 5 — Key Findings")
 
-prophet_2030 = int(comparison["ML_Forecast"].iloc[-1])
-policy_gap   = int(base_units[-1] - prophet_2030)
-
 st.markdown(f"""
 <div class="finding-card">
-    <h4>🔍 Finding 1 — The ML model is more pessimistic than even the Bear case</h4>
-    <p>Prophet, trained purely on IEA historical data with zero knowledge of government policies,
-    forecasts <b>{prophet_2030/1e6:.1f}M BEV units</b> by 2030 —
-    below even our Bear case of <b>{bear_units[-1]/1e6:.1f}M units</b>.
-    Reason: Prophet detects EV growth <b>decelerating</b> from 86% in 2021–22
-    down to ~16% in 2023–24 and assumes that trend continues.</p>
-</div>
-
-<div class="finding-card">
-    <h4>📜 Finding 2 — {policy_gap/1e6:.1f}M units = the measurable value of global EV policy</h4>
-    <p>The gap between Prophet's no-policy forecast (<b>{prophet_2030/1e6:.1f}M</b>) and
-    our Base case (<b>{base_units[-1]/1e6:.1f}M</b>) is <b>{policy_gap/1e6:.1f}M units</b>.
-    Our Base case uses IEA's APS scenario which assumes all government EV pledges are fulfilled.
-    That difference is literally what policy adds to Tesla's addressable market.</p>
-</div>
-
-<div class="finding-card">
-    <h4>🎲 Finding 3 — Bear case is almost certain. Base case is a coin flip.</h4>
+    <h4>🎲 Finding 1 — Bear case is almost certain. Base case is a coin flip.</h4>
     <p>Across 10,000 Monte Carlo simulations, Tesla has a <b>{prob_bear:.0f}% probability</b>
     of exceeding Bear case revenue of <b>${bear_2030_rev:.0f}B</b> by 2030.
     But only a <b>{prob_base:.0f}% probability</b> of exceeding the Base case of
@@ -501,7 +431,7 @@ st.markdown(f"""
 </div>
 
 <div class="finding-card">
-    <h4>🚀 Finding 4 — Bull case requires a genuine catalyst</h4>
+    <h4>🚀 Finding 2 — Bull case requires a genuine catalyst</h4>
     <p>Only <b>{prob_bull:.1f}%</b> of Monte Carlo simulations reach Bull case territory
     (${bull_2030_rev:.0f}B). The Bull case requires simultaneous wins:
     a sub-$30K mass market model, major emerging market penetration (India / SE Asia),
@@ -509,7 +439,7 @@ st.markdown(f"""
 </div>
 
 <div class="finding-card">
-    <h4>📉 Finding 5 — BEV market share battle is the biggest risk</h4>
+    <h4>📉 Finding 3 — BEV market share battle is the biggest risk</h4>
     <p>In 2024, Tesla held <b>18.1%</b> of the global BEV car market while BYD held <b>17.0%</b> —
     a gap of just 1.1 percentage points. The Bear case assumes Tesla loses share every year.
     Even a 5% annual share decline compounds to a dramatically smaller revenue outcome by 2030,
@@ -526,16 +456,13 @@ st.subheader("⚠️ Section 6 — Model Limitations")
 
 st.markdown("""
 <div class="limit-card">
-    <b>Prophet has no policy awareness</b> — trained purely on historical IEA data.
-    It cannot account for new government EV mandates, subsidy changes, or sudden policy reversals.
-</div>
-<div class="limit-card">
     <b>ASP assumptions are held constant per scenario</b> — real-world price changes are non-linear.
     A sudden price war acceleration (as seen 2022–2024) could compress Bear case revenue faster than modelled.
 </div>
 <div class="limit-card">
-    <b>Limited ML training data</b> — only 7 annual data points (2018–2024).
-    Prophet confidence intervals should be treated as directional, not statistically precise.
+    <b>Scenario growth rates are fixed per year</b> — real market growth is rarely a smooth
+    constant percentage; actual BEV adoption tends to move in uneven steps tied to model launches,
+    subsidy cycles, and supply constraints.
 </div>
 <div class="limit-card">
     <b>Monte Carlo assumes uniform distributions</b> — in reality, growth rates and price changes
@@ -545,4 +472,4 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.divider()
-st.caption("Built with IEA Global EV Outlook 2025 · Tesla 10-K · Prophet ML · Monte Carlo Simulation · Streamlit")
+st.caption("Built with IEA Global EV Outlook 2025 · Tesla 10-K · Monte Carlo Simulation · Streamlit")
