@@ -194,15 +194,22 @@ st.markdown("##### 🚀 SOM — Tesla Share of BEV Market (2024–2030)")
 
 tesla_start_share = 0.181
 
-def project_share(change):
-    shares = [tesla_start_share]
+def project_market(market_g):
+    vals = [9_900_000]
     for _ in range(6):
-        shares.append(shares[-1] * (1 + change))
-    return [round(s * 100, 2) for s in shares]
+        vals.append(round(vals[-1] * (1 + market_g)))
+    return vals
 
-bear_som = project_share(bear_share)
-base_som = project_share(base_share)
-bull_som = project_share(bull_share)
+bear_market = project_market(bear_growth)
+base_market = project_market(base_growth)
+bull_market = project_market(bull_growth)
+
+def project_share(units_list, market_list):
+    return [round((u / m) * 100, 2) for u, m in zip(units_list, market_list)]
+
+bear_som = project_share(bear_units, bear_market)
+base_som = project_share(base_units, base_market)
+bull_som = project_share(bull_units, bull_market)
 
 fig_som = go.Figure()
 fig_som.add_trace(go.Scatter(x=years, y=bear_som, name="Bear Case",
