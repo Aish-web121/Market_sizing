@@ -82,7 +82,6 @@ print(f"{'=' * 55}")
 print(f"  Your Bear case  : $138.6B  →  MC says {prob_above_138:.0f}% chance of beating this")
 print(f"  Your Base case  : $238.2B  →  MC says {prob_above_238:.0f}% chance of beating this")
 print(f"  MC Median       : ${p50:.1f}B  →  most likely single outcome")
-print(f"  Prophet forecast: ~$XX B   →  (add manually from Phase 3)")
 
 # ---- STEP 6: Save results ----
 
