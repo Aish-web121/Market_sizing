@@ -30,19 +30,13 @@ Gigafactory capacity
 Competitive landscape (BYD, VW, SAIC, Hyundai)
 Logistics and tariff barriers
 Represents the achievable sales for Tesla.
-4. Tesla-Specific Operational Assumptions
-Category	Assumption	Rationale
-Production Capacity	Starting at ~2M units/year	Based on Tesla 10-K output numbers
-Battery Supply	4680 cell scaling improves by 2026	Derived from Tesla earnings guidance
-Pricing	Mild price cuts to sustain demand	Based on historical strategy
-New Model Launch	Model 2 not assumed in base scenario	Conservative projection
-5. Financial Assumptions
+4. Financial Assumptions
 Item	Assumption
 Currency	USD
 Prices	Real terms (no inflation added)
 Discount Rate	Not applied (volume-based model)
 ASP	Not included unless revenue modeling is added
-6. Calculation Framework
+5. Calculation Framework
 TAM Calculation
 TAM(year) = TAM(previous year) × (1 + Growth Rate)
 SAM Calculation
@@ -53,7 +47,7 @@ Market Share Dynamics
 Bear: Tesla loses share
 Base: Tesla maintains share
 Bull: Tesla gains due to tech & production scale
-7. Scenario Logic
+6. Scenario Logic
 Bear Case
 Slow policy support
 High competition (especially China)
@@ -65,7 +59,7 @@ Bull Case
 Aggressive global EV policies
 Faster battery breakthroughs
 Gigafactory expansion ahead of schedule
-8. Limitations
+7. Limitations
 IEA datasets update annually → might change future results
 Tesla does not publish region-level capacity details precisely
 Market share projections use industry estimates
