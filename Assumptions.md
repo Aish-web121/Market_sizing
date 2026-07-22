@@ -14,7 +14,7 @@ Tesla Market Share Change	–2%	0%	+2%	Competition vs. technology leadership
 Time Horizon	2024–2030	Industry standard		
 3. Market Definition Assumptions
 3.1 Total Addressable Market (TAM)
-Total global BEV sales across all markets.
+Total global car sales across all markets.
 No supply-chain constraints assumed.
 Adoption driven by policy support, charging infrastructure, and battery cost decline.
 3.2 Serviceable Available Market (SAM)
