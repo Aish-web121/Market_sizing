@@ -11,9 +11,7 @@
 #   4. Monte Carlo is cached, and slider ranges can't be reversed.
 #   5. Card captions and finding headlines react to the sliders
 #      (before they were hardcoded text, e.g. "coin flip").
-#   6. New: "What drives the range?" chart, so the claim about the
-#      main risk driver is backed by the simulation itself.
-#   7. Hardcoded inputs moved into named constants at the top.
+#   6. Hardcoded inputs moved into named constants at the top.
 # ============================================
 
 import streamlit as st
@@ -381,47 +379,12 @@ perc_df = pd.DataFrame({
 st.dataframe(perc_df, hide_index=True)
 st.caption(f"80% of simulated outcomes fall between ${p10:.0f}B and ${p90:.0f}B.")
 
-# ---- What drives the range? ----
-st.markdown("##### 🎯 What drives the range?")
-
-
-def driver_strength(x, y):
-    """Squared correlation with log revenue (0 if the lever is fixed)."""
-    if np.std(x) == 0:
-        return 0.0
-    return float(np.corrcoef(x, y)[0, 1] ** 2)
-
-
-log_rev = np.log(rev_B)
-raw = {
-    "Market growth (policy & adoption)": driver_strength(mg, log_rev),
-    "Tesla share change (competition)":  driver_strength(sc, log_rev),
-    "Price change (pricing & mix)":      driver_strength(pc, log_rev),
-}
-total = sum(raw.values()) or 1.0
-drivers = {k: v / total * 100 for k, v in raw.items()}
-top_driver = max(drivers, key=drivers.get)
-
-fig_drv = go.Figure(go.Bar(
-    x=list(drivers.values()), y=list(drivers.keys()), orientation="h",
-    marker_color=["royalblue", "#E31937", "#adb5bd"],
-    hovertemplate="%{y}: %{x:.0f}% of the spread<extra></extra>",
-))
-fig_drv.update_layout(xaxis_title="Share of the spread in 2030 revenue (%)",
-                      height=260, margin=dict(t=10), yaxis=dict(autorange="reversed"))
-st.plotly_chart(fig_drv)
-st.caption("Each lever's squared correlation with 2030 revenue, rescaled to 100%. "
-           "It shows which assumption moves the outcome most, within the ranges chosen.")
-
 st.divider()
 
 # ============================================
 # SECTION 5 — KEY FINDINGS
 # ============================================
 st.subheader("💡 Section 5 — Key Findings")
-
-bear_share_2030 = proj["Bear"]["Share"].iloc[-1]
-base_share_2030 = proj["Base"]["Share"].iloc[-1]
 
 st.markdown(f"""
 <div class="finding-card">
@@ -440,16 +403,6 @@ st.markdown(f"""
     for example a lower-priced mass-market model, new-market growth and Tesla
     holding or growing share. These are qualitative stories behind the Bull
     inputs, not separate variables in the model.</p>
-</div>
-
-<div class="finding-card">
-    <h4>📉 Finding 3 — Market growth moves the range most; share is the Tesla-specific risk</h4>
-    <p>In this model, <b>{top_driver.split(' (')[0].lower()}</b> explains the largest part
-    of the spread in 2030 revenue (<b>{drivers[top_driver]:.0f}%</b>), ahead of price
-    ({drivers["Price change (pricing & mix)"]:.0f}%) and Tesla share change
-    ({drivers["Tesla share change (competition)"]:.0f}%). Share still matters because the gap to BYD
-    was only {TESLA_SHARE_2024*100 - BYD_SHARE_2024:.1f} points in 2024. The Bear case takes Tesla's share from
-    {TESLA_SHARE_2024:.1%} to {bear_share_2030:.1%} by 2030, while the Base case holds it at {base_share_2030:.1%}.</p>
 </div>
 """, unsafe_allow_html=True)
 
