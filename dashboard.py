@@ -35,7 +35,6 @@ TESLA_REV_2024 = 75_147_492_000          # deliveries x $42K ASP (automotive onl
 TESLA_SHARE_2024 = TESLA_UNITS_2024 / SAM_2024   # = 18.07%
 
 TAM_2024_M = 73.5                        # global car sales, millions (OICA)
-TAM_GROWTH = 0.01                        # illustrative ~1% a year, an assumption
 BYD_SHARE_2024 = 17.0                    # approximate, public 2024 sales data
 
 N_SIMS = 10_000
@@ -210,35 +209,18 @@ st.divider()
 # ============================================
 st.subheader("🌍 Section 1 — TAM / SAM / SOM Analysis")
 
-col_t, col_s = st.columns(2)
-
-with col_t:
-    st.markdown("##### 🚘 TAM — Global Total Car Market")
-    tam_values = [round(TAM_2024_M * (1 + TAM_GROWTH) ** i, 1) for i in range(len(YEARS))]
-    fig_tam = go.Figure()
-    fig_tam.add_trace(go.Bar(
-        x=YEARS, y=tam_values,
-        marker_color="steelblue",
-        hovertemplate="TAM: %{y}M units<extra></extra>",
-    ))
-    fig_tam.update_layout(xaxis_title="Year", yaxis_title="Million Units",
-                          height=350, margin=dict(t=20))
-    st.plotly_chart(fig_tam)
-    st.caption(f"Illustrative: assumes the global car market grows about {TAM_GROWTH:.0%} a year.")
-
-with col_s:
-    st.markdown("##### 🥧 Competitor Market Share — 2024 Snapshot")
-    tesla_pct = round(TESLA_SHARE_2024 * 100, 1)
-    fig_pie = go.Figure(data=[go.Pie(
-        labels=["Tesla", "BYD", "Rest of World"],
-        values=[tesla_pct, BYD_SHARE_2024, round(100 - tesla_pct - BYD_SHARE_2024, 1)],
-        hole=0.45,
-        textinfo="label+percent",
-        marker=dict(colors=["#E31937", "#1a1a2e", "#adb5bd"]),
-    )])
-    fig_pie.update_layout(height=350, margin=dict(t=20), showlegend=True)
-    st.plotly_chart(fig_pie)
-    st.caption("BYD share is approximate (public 2024 sales data).")
+st.markdown("##### 🥧 Competitor Market Share — 2024 Snapshot")
+tesla_pct = round(TESLA_SHARE_2024 * 100, 1)
+fig_pie = go.Figure(data=[go.Pie(
+    labels=["Tesla", "BYD", "Rest of World"],
+    values=[tesla_pct, BYD_SHARE_2024, round(100 - tesla_pct - BYD_SHARE_2024, 1)],
+    hole=0.45,
+    textinfo="label+percent",
+    marker=dict(colors=["#E31937", "#1a1a2e", "#adb5bd"]),
+)])
+fig_pie.update_layout(height=350, margin=dict(t=20), showlegend=True)
+st.plotly_chart(fig_pie)
+st.caption("BYD share is approximate (public 2024 sales data).")
 
 st.markdown("##### 🔋 SAM — BEV Market in Tesla's Regions (Bear / Base / Bull)")
 st.plotly_chart(scenario_chart("Market", 1e6, "BEV Sales (Million Units)", ".2f", 380, suffix="M"))
