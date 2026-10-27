@@ -1,5 +1,19 @@
 # ============================================
-# TESLA EV MARKET — STREAMLIT DASHBOARD (PRO)
+# TESLA EV MARKET — STREAMLIT DASHBOARD (CORRECTED)
+# ============================================
+# What changed vs. the earlier version:
+#   1. Market and Tesla units are now projected SEPARATELY.
+#      Market grows at market growth only; Tesla units grow at
+#      market growth + share change (same logic as projections.py).
+#      (Before, the "market" chart used Tesla's growth rate in Bear/Bull.)
+#   2. Tesla share is now units / market, so it matches projections.py.
+#   3. Tesla deliveries start from 1,789,226 (actual), not from 9.9M.
+#   4. Monte Carlo is cached, and slider ranges can't be reversed.
+#   5. Card captions and finding headlines react to the sliders
+#      (before they were hardcoded text, e.g. "coin flip").
+#   6. New: "What drives the range?" chart, so the claim about the
+#      main risk driver is backed by the simulation itself.
+#   7. Hardcoded inputs moved into named constants at the top.
 # ============================================
 
 import streamlit as st
@@ -8,6 +22,27 @@ import numpy as np
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Tesla EV Market Sizing", page_icon="🚗", layout="wide")
+
+# ============================================
+# CONSTANTS (all base-year inputs in one place)
+# ============================================
+YEARS = list(range(2024, 2031))
+N_YEARS = len(YEARS) - 1                 # 6 years of compounding
+
+SAM_2024 = 9_900_000                     # BEV sales: N. America + Europe + China (IEA)
+TESLA_UNITS_2024 = 1_789_226             # Tesla deliveries (10-K)
+TESLA_REV_2024 = 75_147_492_000          # deliveries x $42K ASP (automotive only)
+TESLA_SHARE_2024 = TESLA_UNITS_2024 / SAM_2024   # = 18.07%
+
+TAM_2024_M = 73.5                        # global car sales, millions (OICA)
+TAM_GROWTH = 0.01                        # illustrative ~1% a year, an assumption
+BYD_SHARE_2024 = 17.0                    # approximate, public 2024 sales data
+
+N_SIMS = 10_000
+SEED = 42
+
+COLORS = {"Bear": "red", "Base": "royalblue", "Bull": "green"}
+DASH = {"Bear": "dash", "Base": "solid", "Bull": "dash"}
 
 # ============================================
 # STYLING
@@ -31,6 +66,7 @@ st.markdown("""
     padding: 1rem;
     text-align: center;
     border: 2px solid #dee2e6;
+    color: #333;
 }
 .prob-number { font-size: 2rem; font-weight: 800; }
 .green  { color: #28a745; }
@@ -53,7 +89,7 @@ st.markdown("""
 # ============================================
 st.markdown('<p class="big-title">🚗 Tesla EV Market Sizing — 2024 to 2030</p>', unsafe_allow_html=True)
 st.markdown("**Bear / Base / Bull Scenarios · Monte Carlo Simulation · TAM / SAM / SOM**")
-st.caption("Sources: IEA Global EV Outlook 2025 · Tesla 10-K · OICA 2024")
+st.caption("Sources: IEA Global EV Data Explorer 2025 (2024 actuals) · Tesla 10-K · OICA 2024")
 st.divider()
 
 # ============================================
@@ -61,6 +97,11 @@ st.divider()
 # ============================================
 st.sidebar.title("⚙️ Adjust Assumptions")
 st.sidebar.markdown("Sliders update all charts live")
+st.sidebar.caption(
+    "**Share change** = how much slower (−) or faster (+) Tesla grows than the "
+    "market each year, in percentage points. It is not a drop in market share "
+    "of that many points."
+)
 
 bear_growth = st.sidebar.slider("Bear Market Growth %",  5,  25, 15) / 100
 base_growth = st.sidebar.slider("Base Market Growth %", 10,  30, 20) / 100
@@ -78,54 +119,89 @@ bear_price = st.sidebar.slider("Bear Price Change %", -5,  0, -2) / 100
 base_price = st.sidebar.slider("Base Price Change %", -1,  3,  1) / 100
 bull_price = st.sidebar.slider("Bull Price Change %",  0,  6,  3) / 100
 
+st.sidebar.caption("Tip: set Bear share change to −2% to see the milder Bear case.")
+
 # ============================================
 # PROJECTIONS
 # ============================================
-years = list(range(2024, 2031))
-
-def project_units(market_g, share_g):
-    vals = [9_900_000]
-    for _ in range(6):
-        vals.append(round(vals[-1] * (1 + market_g + share_g)))
+def project_market(market_g):
+    """Serviceable BEV market (units): grows at market growth only."""
+    vals = [SAM_2024]
+    for _ in range(N_YEARS):
+        vals.append(vals[-1] * (1 + market_g))
     return vals
 
+
+def project_tesla_units(market_g, share_g):
+    """Tesla deliveries: grow at market growth + share change."""
+    vals = [TESLA_UNITS_2024]
+    for _ in range(N_YEARS):
+        vals.append(vals[-1] * (1 + market_g + share_g))
+    return vals
+
+
 def project_revenue(market_g, share_g, price_g):
-    vals = [75_147_492_000]
-    for _ in range(6):
+    """Tesla revenue: unit growth x price change."""
+    vals = [TESLA_REV_2024]
+    for _ in range(N_YEARS):
         vals.append(vals[-1] * (1 + market_g + share_g) * (1 + price_g))
     return vals
 
-bear_units = project_units(bear_growth, bear_share)
-base_units = project_units(base_growth, base_share)
-bull_units = project_units(bull_growth, bull_share)
 
-bear_rev = project_revenue(bear_growth, bear_share, bear_price)
-base_rev = project_revenue(base_growth, base_share, base_price)
-bull_rev = project_revenue(bull_growth, bull_share, bull_price)
+scenarios = {
+    "Bear": dict(g=bear_growth, s=bear_share, p=bear_price),
+    "Base": dict(g=base_growth, s=base_share, p=base_price),
+    "Bull": dict(g=bull_growth, s=bull_share, p=bull_price),
+}
 
-manual_df = pd.DataFrame({
-    "Year":       years,
-    "Bear_Units": bear_units,
-    "Base_Units": base_units,
-    "Bull_Units": bull_units,
-    "Bear_Rev":   [r/1e9 for r in bear_rev],
-    "Base_Rev":   [r/1e9 for r in base_rev],
-    "Bull_Rev":   [r/1e9 for r in bull_rev],
-})
+proj = {}
+for name, a in scenarios.items():
+    market = project_market(a["g"])
+    units = project_tesla_units(a["g"], a["s"])
+    rev = project_revenue(a["g"], a["s"], a["p"])
+    proj[name] = pd.DataFrame({
+        "Year":   YEARS,
+        "Market": market,
+        "Units":  units,
+        "Rev":    rev,
+        "Share":  [u / m for u, m in zip(units, market)],
+    })
 
-comparison = manual_df
+
+def scenario_chart(column, divisor, y_title, hover, height, prefix="", suffix=""):
+    """One line chart with Bear / Base / Bull."""
+    fig = go.Figure()
+    for name in ["Base", "Bear", "Bull"]:
+        df = proj[name]
+        fig.add_trace(go.Scatter(
+            x=df["Year"], y=df[column] / divisor,
+            name=f"{name} Case", mode="lines+markers",
+            line=dict(color=COLORS[name], dash=DASH[name], width=3 if name == "Base" else 2),
+            marker=dict(size=8 if name == "Base" else 7),
+            hovertemplate=f"{name}: {prefix}%{{y:{hover}}}{suffix}<extra></extra>",
+        ))
+    fig.update_layout(
+        xaxis_title="Year", yaxis_title=y_title,
+        hovermode="x unified", height=height,
+        legend=dict(orientation="h", y=1.12),
+    )
+    return fig
+
 
 # ============================================
 # KPI STRIP
 # ============================================
 st.subheader("📊 Key Metrics at a Glance")
 
+base_2030 = proj["Base"].iloc[-1]
+
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("TAM (Total Cars)",      "$2.65T",  "73.5M units")
-k2.metric("SAM (Global BEV 2024)", "9.9M",    "units sold")
-k3.metric("Tesla Deliveries 2024", "1.79M",   "18.1% share")
-k4.metric("Tesla Revenue 2024",    "$75.1B",  "base year")
-k5.metric("Base Case 2030",        f"{int(comparison['Base_Units'].iloc[-1]/1e6):.0f}M", "units (projected)")
+k1.metric("TAM (Total Cars)",      "$2.65T", f"{TAM_2024_M:.1f}M units")
+k2.metric("SAM (BEV, Tesla regions)", f"{SAM_2024/1e6:.1f}M", "units sold, 2024")
+k3.metric("Tesla Deliveries 2024", f"{TESLA_UNITS_2024/1e6:.2f}M", f"{TESLA_SHARE_2024:.1%} share")
+k4.metric("Tesla Revenue 2024",    f"${TESLA_REV_2024/1e9:.1f}B", "base year, vehicles only")
+k5.metric("Base Case 2030 Tesla Units", f"{base_2030['Units']/1e6:.1f}M",
+          f"market {base_2030['Market']/1e6:.1f}M")
 
 st.divider()
 
@@ -138,132 +214,66 @@ col_t, col_s = st.columns(2)
 
 with col_t:
     st.markdown("##### 🚘 TAM — Global Total Car Market")
-    tam_values = [73.5, 74.2, 75.0, 75.8, 76.5, 77.3, 78.0]
+    tam_values = [round(TAM_2024_M * (1 + TAM_GROWTH) ** i, 1) for i in range(len(YEARS))]
     fig_tam = go.Figure()
     fig_tam.add_trace(go.Bar(
-        x=years, y=tam_values,
+        x=YEARS, y=tam_values,
         marker_color="steelblue",
-        hovertemplate="TAM: %{y}M units<extra></extra>"
+        hovertemplate="TAM: %{y}M units<extra></extra>",
     ))
-    fig_tam.update_layout(
-        xaxis_title="Year", yaxis_title="Million Units",
-        height=350, margin=dict(t=20)
-    )
-    st.plotly_chart(fig_tam, use_container_width=True)
+    fig_tam.update_layout(xaxis_title="Year", yaxis_title="Million Units",
+                          height=350, margin=dict(t=20))
+    st.plotly_chart(fig_tam)
+    st.caption(f"Illustrative: assumes the global car market grows about {TAM_GROWTH:.0%} a year.")
 
 with col_s:
     st.markdown("##### 🥧 Competitor Market Share — 2024 Snapshot")
+    tesla_pct = round(TESLA_SHARE_2024 * 100, 1)
     fig_pie = go.Figure(data=[go.Pie(
         labels=["Tesla", "BYD", "Rest of World"],
-        values=[18.1, 17.0, 64.9],
+        values=[tesla_pct, BYD_SHARE_2024, round(100 - tesla_pct - BYD_SHARE_2024, 1)],
         hole=0.45,
         textinfo="label+percent",
-        marker=dict(colors=["#E31937", "#1a1a2e", "#adb5bd"])
+        marker=dict(colors=["#E31937", "#1a1a2e", "#adb5bd"]),
     )])
     fig_pie.update_layout(height=350, margin=dict(t=20), showlegend=True)
-    st.plotly_chart(fig_pie, use_container_width=True)
+    st.plotly_chart(fig_pie)
+    st.caption("BYD share is approximate (public 2024 sales data).")
 
-st.markdown("##### 🔋 SAM — Global BEV Market (Bear / Base / Bull)")
+st.markdown("##### 🔋 SAM — BEV Market in Tesla's Regions (Bear / Base / Bull)")
+st.plotly_chart(scenario_chart("Market", 1e6, "BEV Sales (Million Units)", ".2f", 380, suffix="M"))
 
-fig_sam = go.Figure()
-fig_sam.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Base_Units"]/1e6,
-    name="Base Case", mode="lines+markers",
-    line=dict(color="royalblue", width=3), marker=dict(size=8),
-    hovertemplate="Base: %{y:.2f}M<extra></extra>"
-))
-fig_sam.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bear_Units"]/1e6,
-    name="Bear Case", mode="lines+markers",
-    line=dict(color="red", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bear: %{y:.2f}M<extra></extra>"
-))
-fig_sam.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bull_Units"]/1e6,
-    name="Bull Case", mode="lines+markers",
-    line=dict(color="green", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bull: %{y:.2f}M<extra></extra>"
-))
-fig_sam.update_layout(
-    xaxis_title="Year", yaxis_title="BEV Sales (Million Units)",
-    hovermode="x unified", height=380, legend=dict(orientation="h", y=1.1)
-)
-st.plotly_chart(fig_sam, use_container_width=True)
-
-st.markdown("##### 🚀 SOM — Tesla Share of BEV Market (2024–2030)")
-
-
-tesla_start_share = 0.181
-
-def project_share(change):
-    shares = [tesla_start_share]
-    for _ in range(6):
-        shares.append(shares[-1] * (1 + change))
-    return [round(s * 100, 2) for s in shares]
-
-bear_som = project_share(bear_share)
-base_som = project_share(base_share)
-bull_som = project_share(bull_share)
-
+st.markdown("##### 🚀 SOM — Tesla Share of the BEV Market (2024–2030)")
 fig_som = go.Figure()
-fig_som.add_trace(go.Scatter(x=years, y=bear_som, name="Bear Case",
-    mode="lines+markers", line=dict(color="red", dash="dash"), marker=dict(size=7),
-    hovertemplate="Bear Share: %{y:.1f}%<extra></extra>"))
-fig_som.add_trace(go.Scatter(x=years, y=base_som, name="Base Case",
-    mode="lines+markers", line=dict(color="royalblue", width=2), marker=dict(size=7),
-    hovertemplate="Base Share: %{y:.1f}%<extra></extra>"))
-fig_som.add_trace(go.Scatter(x=years, y=bull_som, name="Bull Case",
-    mode="lines+markers", line=dict(color="green", dash="dash"), marker=dict(size=7),
-    hovertemplate="Bull Share: %{y:.1f}%<extra></extra>"))
-fig_som.update_layout(
-    xaxis_title="Year", yaxis_title="Tesla Market Share (%)",
-    hovermode="x unified", height=380, legend=dict(orientation="h", y=1.1)
-)
-st.plotly_chart(fig_som, use_container_width=True)
+for name in ["Bear", "Base", "Bull"]:
+    df = proj[name]
+    fig_som.add_trace(go.Scatter(
+        x=df["Year"], y=(df["Share"] * 100).round(2),
+        name=f"{name} Case", mode="lines+markers",
+        line=dict(color=COLORS[name], dash=DASH[name]), marker=dict(size=7),
+        hovertemplate=f"{name} Share: %{{y:.1f}}%<extra></extra>",
+    ))
+fig_som.update_layout(xaxis_title="Year", yaxis_title="Tesla Market Share (%)",
+                      hovermode="x unified", height=380, legend=dict(orientation="h", y=1.1))
+st.plotly_chart(fig_som)
+st.caption("Share = Tesla units ÷ market units, so it is an outcome of the growth gap, not an input.")
 
 st.divider()
 
 # ============================================
 # SECTION 2 — SCENARIO COMPARISON
 # ============================================
-st.subheader("📈 Section 2 — Bear / Base / Bull Scenario Comparison (Units)")
-st.caption("How do the three policy-driven scenarios compare to one another?")
+st.subheader("📈 Section 2 — Tesla Deliveries by Scenario")
+st.caption("Tesla grows at market growth plus share change, so it can grow faster or slower than the market.")
 
-fig1 = go.Figure()
-
-fig1.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Base_Units"]/1e6,
-    name="Base Case", mode="lines+markers",
-    line=dict(color="royalblue", width=2), marker=dict(size=7),
-    hovertemplate="Base: %{y:.2f}M units<extra></extra>"
-))
-fig1.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bear_Units"]/1e6,
-    name="Bear Case", mode="lines+markers",
-    line=dict(color="red", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bear: %{y:.2f}M units<extra></extra>"
-))
-fig1.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bull_Units"]/1e6,
-    name="Bull Case", mode="lines+markers",
-    line=dict(color="green", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bull: %{y:.2f}M units<extra></extra>"
-))
-
-fig1.update_layout(
-    xaxis_title="Year", yaxis_title="Global BEV Car Sales (Millions)",
-    legend=dict(orientation="h", y=1.12),
-    hovermode="x unified", height=480
-)
-st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(scenario_chart("Units", 1e6, "Tesla Deliveries (Millions)", ".2f", 480, suffix="M"))
 
 st.markdown("##### 📋 Spread Table — How far apart are the scenarios each year?")
-gap_df = pd.DataFrame({"Year": comparison["Year"]})
-gap_df["Bear"] = (comparison["Bear_Units"]/1e6).round(2).astype(str) + "M"
-gap_df["Base"] = (comparison["Base_Units"]/1e6).round(2).astype(str) + "M"
-gap_df["Bull"] = (comparison["Bull_Units"]/1e6).round(2).astype(str) + "M"
-gap_df["Bull vs Bear"] = ((comparison["Bull_Units"] - comparison["Bear_Units"])/1e6).round(2).astype(str) + "M"
-st.dataframe(gap_df, use_container_width=True, hide_index=True)
+gap_df = pd.DataFrame({"Year": YEARS})
+for name in ["Bear", "Base", "Bull"]:
+    gap_df[name] = (proj[name]["Units"] / 1e6).round(2).astype(str) + "M"
+gap_df["Bull vs Bear"] = ((proj["Bull"]["Units"] - proj["Bear"]["Units"]) / 1e6).round(2).astype(str) + "M"
+st.dataframe(gap_df, hide_index=True)
 st.caption("Bull vs Bear shows how wide the range of outcomes becomes by each year.")
 
 st.divider()
@@ -273,32 +283,10 @@ st.divider()
 # ============================================
 st.subheader("💰 Section 3 — Tesla Revenue Projection ($ Billions)")
 
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Base_Rev"],
-    name="Base Case", mode="lines+markers",
-    line=dict(color="royalblue", width=3), marker=dict(size=8),
-    hovertemplate="Base: $%{y:.1f}B<extra></extra>"
-))
-fig2.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bear_Rev"],
-    name="Bear Case", mode="lines+markers",
-    line=dict(color="red", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bear: $%{y:.1f}B<extra></extra>"
-))
-fig2.add_trace(go.Scatter(
-    x=comparison["Year"], y=comparison["Bull_Rev"],
-    name="Bull Case", mode="lines+markers",
-    line=dict(color="green", width=2, dash="dash"), marker=dict(size=7),
-    hovertemplate="Bull: $%{y:.1f}B<extra></extra>"
-))
-fig2.update_layout(
-    xaxis_title="Year", yaxis_title="Tesla Revenue (USD Billions)",
-    legend=dict(orientation="h", y=1.12),
-    hovermode="x unified", height=420
-)
+fig2 = scenario_chart("Rev", 1e9, "Tesla Revenue (USD Billions)", ".1f", 420, prefix="$", suffix="B")
 fig2.update_yaxes(tickprefix="$", ticksuffix="B")
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2)
+st.caption("Vehicle revenue only (deliveries × average price). Total Tesla revenue also includes energy and services.")
 
 st.divider()
 
@@ -313,91 +301,87 @@ st.markdown("""
 > This tells us not just what might happen, but **how likely** each outcome is.
 """)
 
-np.random.seed(42)
-N = 10_000
 
-mg = np.random.uniform(bear_growth, bull_growth, N)
-sc = np.random.uniform(bear_share,  bull_share,  N)
-pc = np.random.uniform(bear_price,  bull_price,  N)
+@st.cache_data
+def run_monte_carlo(g_lo, g_hi, s_lo, s_hi, p_lo, p_hi, seed=SEED, n=N_SIMS):
+    """Each run draws ONE value per lever and holds it for all 6 years."""
+    rs = np.random.RandomState(seed)
+    mg = rs.uniform(g_lo, g_hi, n)
+    sc = rs.uniform(s_lo, s_hi, n)
+    pc = rs.uniform(p_lo, p_hi, n)
+    rev = TESLA_REV_2024 * ((1 + mg + sc) ** N_YEARS) * ((1 + pc) ** N_YEARS)
+    return mg, sc, pc, rev / 1e9
 
-revenue_2030 = 75_147_492_000 * ((1 + mg + sc) ** 6) * ((1 + pc) ** 6)
-rev_B = revenue_2030 / 1e9
 
-p10  = np.percentile(rev_B, 10)
-p25  = np.percentile(rev_B, 25)
-p50  = np.percentile(rev_B, 50)
-p75  = np.percentile(rev_B, 75)
-p90  = np.percentile(rev_B, 90)
-mean = np.mean(rev_B)
+mg, sc, pc, rev_B = run_monte_carlo(
+    min(bear_growth, bull_growth), max(bear_growth, bull_growth),
+    min(bear_share,  bull_share),  max(bear_share,  bull_share),
+    min(bear_price,  bull_price),  max(bear_price,  bull_price),
+)
 
-bear_2030_rev = bear_rev[-1] / 1e9
-base_2030_rev = base_rev[-1] / 1e9
-bull_2030_rev = bull_rev[-1] / 1e9
+p10, p25, p50, p75, p90 = np.percentile(rev_B, [10, 25, 50, 75, 90])
+mean = float(np.mean(rev_B))
 
-prob_bear = np.mean(rev_B > bear_2030_rev) * 100
-prob_base = np.mean(rev_B > base_2030_rev) * 100
-prob_bull = np.mean(rev_B > bull_2030_rev) * 100
-prob_100  = np.mean(rev_B > 100) * 100
+bear_2030_rev = proj["Bear"]["Rev"].iloc[-1] / 1e9
+base_2030_rev = proj["Base"]["Rev"].iloc[-1] / 1e9
+bull_2030_rev = proj["Bull"]["Rev"].iloc[-1] / 1e9
+
+prob_bear = float(np.mean(rev_B > bear_2030_rev) * 100)
+prob_base = float(np.mean(rev_B > base_2030_rev) * 100)
+prob_bull = float(np.mean(rev_B > bull_2030_rev) * 100)
+prob_100  = float(np.mean(rev_B > 100) * 100)
 
 fig3 = go.Figure()
-fig3.add_trace(go.Histogram(
-    x=rev_B, nbinsx=80,
-    marker_color="royalblue", opacity=0.75,
-    name="10,000 Simulations"
-))
-fig3.add_vline(x=p50,           line_color="orange", line_dash="dash", line_width=2,
+fig3.add_trace(go.Histogram(x=rev_B, nbinsx=80, marker_color="royalblue",
+                            opacity=0.75, name="10,000 Simulations"))
+fig3.add_vline(x=p50, line_color="orange", line_dash="dash", line_width=2,
                annotation_text=f"Median ${p50:.0f}B", annotation_position="top right")
-fig3.add_vline(x=bear_2030_rev, line_color="red",    line_dash="dot",  line_width=2,
+fig3.add_vline(x=bear_2030_rev, line_color="red", line_dash="dot", line_width=2,
                annotation_text=f"Bear ${bear_2030_rev:.0f}B", annotation_position="top left")
-fig3.add_vline(x=base_2030_rev, line_color="green",  line_dash="dot",  line_width=2,
+fig3.add_vline(x=base_2030_rev, line_color="green", line_dash="dot", line_width=2,
                annotation_text=f"Base ${base_2030_rev:.0f}B", annotation_position="top right")
-fig3.update_layout(
-    xaxis_title="Tesla 2030 Revenue ($ Billions)",
-    yaxis_title="Number of Simulations (out of 10,000)",
-    height=430, showlegend=False
-)
+fig3.update_layout(xaxis_title="Tesla 2030 Revenue ($ Billions)",
+                   yaxis_title="Number of Simulations (out of 10,000)",
+                   height=430, showlegend=False)
 fig3.update_xaxes(tickprefix="$", ticksuffix="B")
-st.plotly_chart(fig3, use_container_width=True)
+st.plotly_chart(fig3)
 
 st.markdown("##### 🗣️ What does this mean in plain English?")
 
+
+def prob_card(col, prob, title, note, color):
+    with col:
+        st.markdown(f"""
+        <div class="prob-card">
+            <div class="prob-number {color}">{prob}</div>
+            <div><b>{title}</b></div>
+            <div style="font-size:0.8rem;color:#666;margin-top:0.3rem">{note}</div>
+        </div>""", unsafe_allow_html=True)
+
+
 mc1, mc2, mc3, mc4 = st.columns(4)
 
-with mc1:
-    color = "green" if prob_100 > 80 else "orange"
-    st.markdown(f"""
-    <div class="prob-card">
-        <div class="prob-number {color}">{prob_100:.0f}%</div>
-        <div><b>chance Tesla exceeds $100B</b></div>
-        <div style="font-size:0.8rem;color:#666;margin-top:0.3rem">Almost guaranteed floor</div>
-    </div>""", unsafe_allow_html=True)
+prob_card(mc1, f"{prob_100:.0f}%", "chance Tesla exceeds $100B",
+          "Very likely floor" if prob_100 > 90 else "Not a guaranteed floor",
+          "green" if prob_100 > 80 else "orange")
 
-with mc2:
-    color = "green" if prob_bear > 70 else "orange"
-    st.markdown(f"""
-    <div class="prob-card">
-        <div class="prob-number {color}">{prob_bear:.0f}%</div>
-        <div><b>chance Tesla beats Bear (${bear_2030_rev:.0f}B)</b></div>
-        <div style="font-size:0.8rem;color:#666;margin-top:0.3rem">Bear case nearly certain</div>
-    </div>""", unsafe_allow_html=True)
+prob_card(mc2, f"{prob_bear:.0f}%", f"chance Tesla beats Bear (${bear_2030_rev:.0f}B)",
+          "Bear very likely beaten" if prob_bear > 90
+          else ("Bear likely beaten" if prob_bear > 70 else "Bear is a real risk"),
+          "green" if prob_bear > 70 else "orange")
 
-with mc3:
-    color = "orange" if 30 < prob_base < 70 else ("green" if prob_base >= 70 else "red")
-    st.markdown(f"""
-    <div class="prob-card">
-        <div class="prob-number {color}">{prob_base:.0f}%</div>
-        <div><b>chance Tesla beats Base (${base_2030_rev:.0f}B)</b></div>
-        <div style="font-size:0.8rem;color:#666;margin-top:0.3rem">Base case = coin flip</div>
-    </div>""", unsafe_allow_html=True)
+if prob_base >= 70:
+    base_note, base_color = "Base likely beaten", "green"
+elif prob_base > 30:
+    base_note, base_color = "Close to a coin flip", "orange"
+else:
+    base_note, base_color = "Base unlikely to be beaten", "red"
+prob_card(mc3, f"{prob_base:.0f}%", f"chance Tesla beats Base (${base_2030_rev:.0f}B)",
+          base_note, base_color)
 
-with mc4:
-    color = "red" if prob_bull < 10 else "orange"
-    st.markdown(f"""
-    <div class="prob-card">
-        <div class="prob-number {color}">{prob_bull:.0f}%</div>
-        <div><b>chance Tesla beats Bull (${bull_2030_rev:.0f}B)</b></div>
-        <div style="font-size:0.8rem;color:#666;margin-top:0.3rem">Bull needs a catalyst</div>
-    </div>""", unsafe_allow_html=True)
+prob_card(mc4, f"{prob_bull:.1f}%", f"chance Tesla beats Bull (${bull_2030_rev:.0f}B)",
+          "Bull needs a catalyst" if prob_bull < 10 else "Bull is within reach",
+          "red" if prob_bull < 10 else "orange")
 
 st.markdown("##### 📊 Full Distribution — Revenue at each probability level")
 perc_df = pd.DataFrame({
@@ -406,13 +390,46 @@ perc_df = pd.DataFrame({
     "Plain English": [
         "Only 10% of scenarios end up worse than this",
         "A bad but plausible outcome",
-        "The most likely single outcome",
-        "A good outcome — requires solid execution",
-        "Only happens in top 10% of scenarios",
-        "Simple average across all 10,000 runs"
-    ]
+        "Middle outcome: half of runs above, half below",
+        "A good outcome, requires solid execution",
+        "Only the top 10% of scenarios reach this",
+        "Simple average across all 10,000 runs",
+    ],
 })
-st.dataframe(perc_df, use_container_width=True, hide_index=True)
+st.dataframe(perc_df, hide_index=True)
+st.caption(f"80% of simulated outcomes fall between ${p10:.0f}B and ${p90:.0f}B.")
+
+# ---- What drives the range? ----
+st.markdown("##### 🎯 What drives the range?")
+
+
+def driver_strength(x, y):
+    """Squared correlation with log revenue (0 if the lever is fixed)."""
+    if np.std(x) == 0:
+        return 0.0
+    return float(np.corrcoef(x, y)[0, 1] ** 2)
+
+
+log_rev = np.log(rev_B)
+raw = {
+    "Market growth (policy & adoption)": driver_strength(mg, log_rev),
+    "Tesla share change (competition)":  driver_strength(sc, log_rev),
+    "Price change (pricing & mix)":      driver_strength(pc, log_rev),
+}
+total = sum(raw.values()) or 1.0
+drivers = {k: v / total * 100 for k, v in raw.items()}
+top_driver = max(drivers, key=drivers.get)
+
+fig_drv = go.Figure(go.Bar(
+    x=list(drivers.values()), y=list(drivers.keys()), orientation="h",
+    marker_color=["royalblue", "#E31937", "#adb5bd"],
+    hovertemplate="%{y}: %{x:.0f}% of the spread<extra></extra>",
+))
+fig_drv.update_layout(xaxis_title="Share of the spread in 2030 revenue (%)",
+                      height=260, margin=dict(t=10), yaxis=dict(autorange="reversed"))
+st.plotly_chart(fig_drv)
+st.caption("Each lever's squared correlation with 2030 revenue, rescaled to 100%. "
+           "It shows which assumption moves the outcome most, within the ranges chosen.")
 
 st.divider()
 
@@ -421,30 +438,36 @@ st.divider()
 # ============================================
 st.subheader("💡 Section 5 — Key Findings")
 
+bear_share_2030 = proj["Bear"]["Share"].iloc[-1]
+base_share_2030 = proj["Base"]["Share"].iloc[-1]
+
 st.markdown(f"""
 <div class="finding-card">
-    <h4>🎲 Finding 1 — Bear case is almost certain. Base case is a coin flip.</h4>
+    <h4>🎲 Finding 1 — Bear is beaten in {prob_bear:.0f}% of runs; Base in {prob_base:.0f}%</h4>
     <p>Across 10,000 Monte Carlo simulations, Tesla has a <b>{prob_bear:.0f}% probability</b>
-    of exceeding Bear case revenue of <b>${bear_2030_rev:.0f}B</b> by 2030.
-    But only a <b>{prob_base:.0f}% probability</b> of exceeding the Base case of
-    <b>${base_2030_rev:.0f}B</b> — a genuine coin flip depending on whether Tesla
-    can defend 18% market share against BYD and legacy OEMs.</p>
+    of exceeding Bear case revenue of <b>${bear_2030_rev:.0f}B</b> by 2030, but only a
+    <b>{prob_base:.0f}% probability</b> of exceeding the Base case of
+    <b>${base_2030_rev:.0f}B</b>. Whether Base is reached depends on whether Tesla
+    can hold about {TESLA_SHARE_2024:.0%} share against BYD and legacy OEMs.</p>
 </div>
 
 <div class="finding-card">
     <h4>🚀 Finding 2 — Bull case requires a genuine catalyst</h4>
-    <p>Only <b>{prob_bull:.1f}%</b> of Monte Carlo simulations reach Bull case territory
-    (${bull_2030_rev:.0f}B). The Bull case requires simultaneous wins:
-    a sub-$30K mass market model, major emerging market penetration (India / SE Asia),
-    and Tesla maintaining or growing its global market share against intensifying competition.</p>
+    <p>Only <b>{prob_bull:.1f}%</b> of simulations reach the Bull case
+    (${bull_2030_rev:.0f}B). Narratively, that would need several wins at once,
+    for example a lower-priced mass-market model, new-market growth and Tesla
+    holding or growing share. These are qualitative stories behind the Bull
+    inputs, not separate variables in the model.</p>
 </div>
 
 <div class="finding-card">
-    <h4>📉 Finding 3 — BEV market share battle is the biggest risk</h4>
-    <p>In 2024, Tesla held <b>18.1%</b> of the global BEV car market while BYD held <b>17.0%</b> —
-    a gap of just 1.1 percentage points. The Bear case assumes Tesla loses share every year.
-    Even a 5% annual share decline compounds to a dramatically smaller revenue outcome by 2030,
-    independent of overall market growth.</p>
+    <h4>📉 Finding 3 — Market growth moves the range most; share is the Tesla-specific risk</h4>
+    <p>In this model, <b>{top_driver.split(' (')[0].lower()}</b> explains the largest part
+    of the spread in 2030 revenue (<b>{drivers[top_driver]:.0f}%</b>), ahead of price
+    ({drivers["Price change (pricing & mix)"]:.0f}%) and Tesla share change
+    ({drivers["Tesla share change (competition)"]:.0f}%). Share still matters because the gap to BYD
+    was only {TESLA_SHARE_2024*100 - BYD_SHARE_2024:.1f} points in 2024. The Bear case takes Tesla's share from
+    {TESLA_SHARE_2024:.1%} to {bear_share_2030:.1%} by 2030, while the Base case holds it at {base_share_2030:.1%}.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -461,16 +484,19 @@ st.markdown("""
     A sudden price war acceleration (as seen 2022–2024) could compress Bear case revenue faster than modelled.
 </div>
 <div class="limit-card">
-    <b>Scenario growth rates are fixed per year</b> — real market growth is rarely a smooth
-    constant percentage; actual BEV adoption tends to move in uneven steps tied to model launches,
-    subsidy cycles, and supply constraints.
+    <b>Growth rates are fixed per year</b> — real BEV adoption moves in uneven steps tied to
+    model launches, subsidy cycles and supply constraints. In the Monte Carlo, each run draws
+    one rate and holds it for all six years, so year-to-year volatility is not captured.
 </div>
 <div class="limit-card">
-    <b>Monte Carlo assumes uniform distributions</b> — in reality, growth rates and price changes
-    are correlated. A market downturn typically compresses both volume and price simultaneously,
-    which this model treats as independent variables.
+    <b>Monte Carlo assumes uniform, independent distributions</b> — in reality growth and price are
+    correlated. A market downturn typically compresses both volume and price at once.
+</div>
+<div class="limit-card">
+    <b>Scope and inputs</b> — revenue is vehicles only (not energy or services), the SAM uses one
+    average price for all regions, and the TAM growth and BYD share are approximate, illustrative inputs.
 </div>
 """, unsafe_allow_html=True)
 
 st.divider()
-st.caption("Built with IEA Global EV Outlook 2025 · Tesla 10-K · Monte Carlo Simulation · Streamlit")
+st.caption("Built with IEA Global EV Data Explorer 2025 · Tesla 10-K · Monte Carlo Simulation · Streamlit")
